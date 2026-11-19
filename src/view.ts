@@ -17,11 +17,14 @@ import {
 } from "./text.ts"
 
 export type LinkRow = {
-  kind: "pullRequest" | "artifact"
+  kind: "repository" | "pullRequest" | "artifact"
   url: string
   title: string
   detail: string
   markerColor: Colorize
+  // The pull request of the branch the session is on. It is marked, and selected until
+  // another link is chosen.
+  isOnCurrentBranch?: boolean
 }
 
 export type OverviewState = {
@@ -64,6 +67,9 @@ const TWO_COLUMN_WIDTH = 110
 const SMALLEST_FRAME_HEIGHT = 3
 const COMFORTABLE_LIST_HEIGHT = 6
 const SHOWN_TOOL_COUNT = 4
+const LARGEST_DETAIL_SHARE = 0.45
+const LINK_MARKER = "◆"
+const CURRENT_BRANCH_MARKER = "▶"
 
 export function formatTokens(tokenCount: number): string {
   if (tokenCount >= 999_950) return `${(tokenCount / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`
@@ -98,7 +104,10 @@ function pullRequestState(pullRequest: PullRequest): { label: string; color: Col
 }
 
 function pullRequestDetail(pullRequest: PullRequest): string {
+  const { stack } = pullRequest
   const parts = [pullRequestState(pullRequest).label]
+  if (stack) parts.unshift(`${stack.position}/${stack.size}`)
+  if (stack?.needsRebase) parts.push("needs rebase")
   if (pullRequest.failedCheckCount > 0) parts.push(`✗ ${countOf(pullRequest.failedCheckCount, "check")}`)
   else if (pullRequest.pendingCheckCount > 0) parts.push(`… ${countOf(pullRequest.pendingCheckCount, "check")}`)
   else if (pullRequest.passedCheckCount > 0) parts.push(`✓ ${countOf(pullRequest.passedCheckCount, "check")}`)
@@ -106,20 +115,35 @@ function pullRequestDetail(pullRequest: PullRequest): string {
   return parts.join(" · ")
 }
 
-// The branch's pull request comes first, then any others the session opened, then the artifacts.
-export function buildLinkRows(summary: TranscriptSummary, pullRequest: PullRequest | null): LinkRow[] {
+// The repository comes first, then the pull requests of the branch (its whole stack, from the
+// trunk upward), then any others the session opened, then the artifacts.
+export function buildLinkRows(
+  summary: TranscriptSummary,
+  branchPullRequests: PullRequest[],
+  repositoryUrl?: string,
+): LinkRow[] {
   const rows: LinkRow[] = []
-  if (pullRequest) {
+  if (repositoryUrl) {
+    rows.push({
+      kind: "repository",
+      url: repositoryUrl,
+      title: new URL(repositoryUrl).pathname.slice(1),
+      detail: "repository",
+      markerColor: style.magenta,
+    })
+  }
+  for (const pullRequest of branchPullRequests) {
     rows.push({
       kind: "pullRequest",
       url: pullRequest.url,
       title: `#${pullRequest.number} ${singleLine(pullRequest.title)}`,
       detail: pullRequestDetail(pullRequest),
       markerColor: pullRequestState(pullRequest).color,
+      isOnCurrentBranch: pullRequest.stack ? pullRequest.stack.isCurrentBranch : true,
     })
   }
   for (const link of summary.pullRequestLinks) {
-    if (link.url === pullRequest?.url) continue
+    if (branchPullRequests.some((pullRequest) => pullRequest.url === link.url)) continue
     rows.push({
       kind: "pullRequest",
       url: link.url,
@@ -153,13 +177,16 @@ function dimLine(text: string, width: number): string {
 }
 
 function linkLines(row: LinkRow, isSelected: boolean, width: number): string[] {
-  const detailWidth = row.detail ? displayWidth(row.detail) + 2 : 0
+  const shownDetail = truncateToWidth(row.detail, Math.floor(width * LARGEST_DETAIL_SHARE))
+  const detailWidth = shownDetail ? displayWidth(shownDetail) + 2 : 0
   const showsDetail = width - 2 - detailWidth >= 12
-  const title = fitToWidth(row.title, width - 2 - (showsDetail ? detailWidth : 0))
-  const detail = showsDetail && row.detail ? `  ${style.dim(row.detail)}` : ""
+  const fittedTitle = fitToWidth(row.title, width - 2 - (showsDetail ? detailWidth : 0))
+  const title = row.isOnCurrentBranch ? style.bold(fittedTitle) : fittedTitle
+  const marker = row.isOnCurrentBranch ? CURRENT_BRANCH_MARKER : LINK_MARKER
+  const detail = showsDetail && shownDetail ? `  ${style.dim(shownDetail)}` : ""
   const address = hyperlink(row.url, style.dim(fitToWidth(row.url, width - 2)))
   return [
-    highlight(`${row.markerColor("◆")} ${title}${detail}`, isSelected),
+    highlight(`${row.markerColor(marker)} ${title}${detail}`, isSelected),
     highlight(`  ${address}`, isSelected),
   ]
 }
@@ -230,8 +257,10 @@ function contextPanel(state: OverviewState, width: number): Panel {
 
 function gitPanel(state: OverviewState, width: number): Panel {
   const { git, links, selectedLinkIndex } = state
-  const pullRequestRows = links.filter((row) => row.kind === "pullRequest")
-  const isFocused = links[selectedLinkIndex]?.kind === "pullRequest"
+  const repositoryRows = links.filter((row) => row.kind !== "artifact")
+  const hasPullRequest = repositoryRows.some((row) => row.kind === "pullRequest")
+  const selectedLink = links[selectedLinkIndex]
+  const isFocused = !!selectedLink && selectedLink.kind !== "artifact"
   const lines: string[] = []
   if (git === undefined) lines.push(dimLine("Asking git…", width))
   else if (git === null) lines.push(dimLine("Not a git repository", width))
@@ -245,13 +274,13 @@ function gitPanel(state: OverviewState, width: number): Panel {
     lines.push(field("Changes", changes, width, git.changedFileCount > 0 ? style.yellow : style.green))
   }
   let anchorLineIndex: number | undefined
-  if (pullRequestRows.length > 0) lines.push(" ".repeat(width))
-  pullRequestRows.forEach((row) => {
-    const isSelected = links[selectedLinkIndex] === row
+  if (repositoryRows.length > 0) lines.push(" ".repeat(width))
+  repositoryRows.forEach((row) => {
+    const isSelected = selectedLink === row
     if (isSelected) anchorLineIndex = lines.length
     lines.push(...linkLines(row, isSelected, width))
   })
-  if (pullRequestRows.length === 0 && git) {
+  if (!hasPullRequest && git) {
     const message =
       state.pullRequestLookup === "loading"
         ? "Looking for a pull request…"

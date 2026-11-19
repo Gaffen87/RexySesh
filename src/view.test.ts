@@ -41,7 +41,7 @@ function stateWith(artifactCount: number, overrides: Partial<OverviewState> = {}
     summary,
     git: { branch: "feature/overview", upstream: "origin/feature/overview", aheadCount: 1, behindCount: 0, changedFileCount: 2 },
     pullRequestLookup: "done",
-    links: buildLinkRows(summary, pullRequest),
+    links: buildLinkRows(summary, [pullRequest], "https://github.com/acme/app"),
     selectedLinkIndex: 0,
     contextWindowTokens: 200_000,
     statusMessage: "updated 10:00",
@@ -76,6 +76,8 @@ test("the screen shows the branch, the pull request, the context and the artifac
   const screen = renderScreen(stateWith(2), 140, 40).join("\n")
   for (const expected of [
     "feature/overview",
+    "acme/app",
+    "https://github.com/acme/app ",
     "#7 Add the overview",
     "https://github.com/acme/app/pull/7",
     "✓ 11 checks · approved",
@@ -96,8 +98,51 @@ test("a pull request the session opened is listed once, after the branch's own",
     { url: "https://github.com/acme/app/pull/7", number: 7, repository: "acme/app" },
     { url: "https://github.com/acme/app/pull/8", number: 8, repository: "acme/app" },
   ]
-  const rows = buildLinkRows(summary, null)
+  const rows = buildLinkRows(summary, [])
   expect(rows.map((row) => row.title)).toEqual(["acme/app#7", "acme/app#8"])
+})
+
+test("a stack lists every pull request with its place, and prefers the branch's own", () => {
+  const stacked = (number: number, position: number, isCurrentBranch: boolean) => ({
+    url: `https://github.com/acme/app/pull/${number}`,
+    number,
+    title: `Layer ${position}`,
+    state: "OPEN",
+    isDraft: false,
+    passedCheckCount: 3,
+    failedCheckCount: 0,
+    pendingCheckCount: 0,
+    stack: { position, size: 3, isCurrentBranch, needsRebase: position === 1 },
+  })
+  const summary = new TranscriptReader().summary()
+  summary.pullRequestLinks = [{ url: "https://github.com/acme/app/pull/12", number: 12, repository: "acme/app" }]
+  const rows = buildLinkRows(summary, [stacked(11, 1, false), stacked(12, 2, true), stacked(13, 3, false)])
+  expect(rows.map((row) => [row.title, row.detail, !!row.isOnCurrentBranch])).toEqual([
+    ["#11 Layer 1", "1/3 · open · needs rebase · ✓ 3 checks", false],
+    ["#12 Layer 2", "2/3 · open · ✓ 3 checks", true],
+    ["#13 Layer 3", "3/3 · open · ✓ 3 checks", false],
+  ])
+})
+
+test("only the pull request of the current branch gets the marker", () => {
+  const stacked = (number: number, isCurrentBranch: boolean) => ({
+    url: `https://github.com/acme/app/pull/${number}`,
+    number,
+    title: `Layer ${number}`,
+    state: "OPEN",
+    isDraft: false,
+    passedCheckCount: 0,
+    failedCheckCount: 0,
+    pendingCheckCount: 0,
+    stack: { position: number, size: 2, isCurrentBranch, needsRebase: false },
+  })
+  const summary = new TranscriptReader().summary()
+  const links = buildLinkRows(summary, [stacked(1, false), stacked(2, true)])
+  const markedLines = renderScreen(stateWith(0, { links, selectedLinkIndex: 0 }), 100, 40)
+    .map((line) => Bun.stripANSI(line))
+    .filter((line) => line.includes("▶"))
+  expect(markedLines.length).toBe(1)
+  expect(markedLines[0]).toContain("▶ #2 Layer 2")
 })
 
 test("a hyperlink is as wide as its text", () => {

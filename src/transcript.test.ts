@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { parseGitStatus, parsePullRequest } from "./git.ts"
+import { parseGitStatus, parsePullRequest, parseStack, webUrlOfRemote } from "./git.ts"
 import { TranscriptReader } from "./transcript.ts"
 
 function summaryOf(records: object[]) {
@@ -116,6 +116,45 @@ test("git status gives the branch, its distance from upstream, and the changed f
     behindCount: 1,
     changedFileCount: 2,
   })
+})
+
+test("a remote's address becomes the address of its web page", () => {
+  const webUrl = "https://github.com/acme/app"
+  for (const remoteAddress of [
+    "git@github.com:acme/app.git\n",
+    "ssh://git@github.com/acme/app.git",
+    "ssh://git@github.com:22/acme/app",
+    "https://github.com/acme/app.git",
+    "https://token@github.com/acme/app/",
+  ]) {
+    expect(webUrlOfRemote(remoteAddress)).toBe(webUrl)
+  }
+  expect(webUrlOfRemote("/srv/git/app.git")).toBeUndefined()
+})
+
+test("a stack gives its branches with a pull request, from the trunk upward", () => {
+  const branch = (name: string, number: number, extra: object = {}) => ({
+    name,
+    isCurrent: false,
+    isMerged: false,
+    needsRebase: false,
+    pr: { number, url: `https://github.com/acme/app/pull/${number}`, state: "OPEN" },
+    ...extra,
+  })
+  const stackJson = JSON.stringify({
+    trunk: "main",
+    currentBranch: "layer-2",
+    branches: [
+      branch("layer-1", 11, { isMerged: true, needsRebase: true }),
+      branch("layer-2", 12, { isCurrent: true }),
+      { name: "layer-3", isCurrent: false },
+    ],
+  })
+  expect(parseStack(stackJson)).toEqual([
+    { branch: "layer-1", isCurrentBranch: false, needsRebase: true, number: 11, url: "https://github.com/acme/app/pull/11", state: "MERGED" },
+    { branch: "layer-2", isCurrentBranch: true, needsRebase: false, number: 12, url: "https://github.com/acme/app/pull/12", state: "OPEN" },
+  ])
+  expect(parseStack("not part of a stack")).toEqual([])
 })
 
 test("a pull request's checks are counted as passed, failed or pending", () => {

@@ -7,7 +7,7 @@ import {
   type SessionQuery,
   type SessionRecord,
 } from "./claudeSession.ts"
-import { readGitState, readPullRequest, type GitState, type PullRequest } from "./git.ts"
+import { readBranchPullRequests, readGitState, type GitState, type PullRequest } from "./git.ts"
 import { TranscriptReader } from "./transcript.ts"
 import { buildLinkRows, renderScreen, type LinkRow, type OverviewState } from "./view.ts"
 
@@ -50,7 +50,7 @@ let session: SessionRecord | null = null
 let transcript: TranscriptFollower | null = null
 let summary = new TranscriptReader().summary()
 let git: GitState | null | undefined
-let pullRequest: PullRequest | null = null
+let branchPullRequests: PullRequest[] = []
 let pullRequestLookup: OverviewState["pullRequestLookup"] = ghBinary ? "loading" : "unavailable"
 let links: LinkRow[] = []
 let selectedLinkUrl: string | undefined
@@ -68,12 +68,17 @@ function contextWindowTokens(): number {
   return usesLargeWindow ? LARGE_CONTEXT_WINDOW_TOKENS : STANDARD_CONTEXT_WINDOW_TOKENS
 }
 
+// Until a link is chosen, the branch's own pull request is selected, or else the first
+// link that is not the repository.
 function selectedLinkIndex(): number {
-  return Math.max(0, links.findIndex((row) => row.url === selectedLinkUrl))
+  const chosenIndex = links.findIndex((row) => row.url === selectedLinkUrl)
+  if (chosenIndex >= 0) return chosenIndex
+  const preferredIndex = links.findIndex((row) => row.isOnCurrentBranch)
+  return Math.max(0, preferredIndex >= 0 ? preferredIndex : links.findIndex((row) => row.kind !== "repository"))
 }
 
 function render() {
-  links = buildLinkRows(summary, pullRequest)
+  links = buildLinkRows(summary, branchPullRequests, git?.repositoryUrl)
   const lines = renderScreen(
     {
       session,
@@ -114,9 +119,9 @@ async function refreshPullRequest() {
   if (!directory || !ghBinary) return
   const generation = repositoryGeneration
   pullRequestReadAt = Date.now()
-  const foundPullRequest = git === null ? null : await readPullRequest(ghBinary, directory)
+  const foundPullRequests = git === null ? [] : await readBranchPullRequests(ghBinary, directory)
   if (generation !== repositoryGeneration) return
-  pullRequest = foundPullRequest
+  branchPullRequests = foundPullRequests
   pullRequestLookup = "done"
   render()
 }
