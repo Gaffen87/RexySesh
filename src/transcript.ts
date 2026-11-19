@@ -3,7 +3,6 @@
 
 export type Artifact = { url: string; title: string; version?: number; updatedAt?: string }
 export type PullRequestLink = { url: string; number: number; repository?: string }
-export type TouchedFile = { path: string; editCount: number }
 
 export type TranscriptSummary = {
   title?: string
@@ -22,11 +21,9 @@ export type TranscriptSummary = {
   toolCounts: Map<string, number>
   artifacts: Artifact[]
   pullRequestLinks: PullRequestLink[]
-  touchedFiles: TouchedFile[]
 }
 
 const ARTIFACT_URL_PATTERN = /^https:\/\/claude\.ai\/(code\/)?artifact\//
-const FILE_EDITING_TOOLS = new Set(["Edit", "Write", "NotebookEdit"])
 const SKIPPED_LINE_PREFIX = '{"type":"api-request'
 
 type JsonObject = Record<string, any>
@@ -50,7 +47,6 @@ export class TranscriptReader {
   private readonly artifactToolUseIds = new Set<string>()
   private readonly artifactsByUrl = new Map<string, Artifact>()
   private readonly pullRequestLinksByUrl = new Map<string, PullRequestLink>()
-  private readonly editCountsByPath = new Map<string, number>()
 
   addLine(line: string) {
     if (!line || line.startsWith(SKIPPED_LINE_PREFIX)) return
@@ -126,12 +122,6 @@ export class TranscriptReader {
       this.toolCounts.set(block.name, (this.toolCounts.get(block.name) ?? 0) + 1)
       if (block.name === "Agent") this.subagentCount += 1
       if (block.name === "Artifact") this.artifactToolUseIds.add(block.id)
-      const editedPath = block.input?.file_path ?? block.input?.notebook_path
-      if (FILE_EDITING_TOOLS.has(block.name) && typeof editedPath === "string") {
-        const editCount = this.editCountsByPath.get(editedPath) ?? 0
-        this.editCountsByPath.delete(editedPath)
-        this.editCountsByPath.set(editedPath, editCount + 1)
-      }
     }
   }
 
@@ -162,7 +152,7 @@ export class TranscriptReader {
     })
   }
 
-  // Artifacts and files come newest first: each map keeps its latest change last.
+  // Artifacts come newest first: the map keeps its latest change last.
   summary(): TranscriptSummary {
     let outputTokens = 0
     for (const messageOutputTokens of this.outputTokensByMessageId.values()) outputTokens += messageOutputTokens
@@ -183,7 +173,6 @@ export class TranscriptReader {
       toolCounts: new Map(this.toolCounts),
       artifacts: [...this.artifactsByUrl.values()].reverse(),
       pullRequestLinks: [...this.pullRequestLinksByUrl.values()],
-      touchedFiles: [...this.editCountsByPath].map(([path, editCount]) => ({ path, editCount })).reverse(),
     }
   }
 }

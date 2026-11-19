@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import { parseListeningSockets, parseWorkingDirectories, processNameOf } from "./devServers.ts"
+import { parseProxyRoutes } from "./pitchfork.ts"
 import { displayWidth, hyperlink } from "./text.ts"
 import { TranscriptReader } from "./transcript.ts"
 import {
@@ -24,7 +26,6 @@ function stateWith(artifactCount: number, overrides: Partial<OverviewState> = {}
     title: `Artifact ${artifactIndex}`,
     version: artifactIndex + 1,
   }))
-  summary.touchedFiles = [{ path: "/work/app/src/main.ts", editCount: 3 }]
   const pullRequest = {
     url: "https://github.com/acme/app/pull/7",
     number: 7,
@@ -36,12 +37,13 @@ function stateWith(artifactCount: number, overrides: Partial<OverviewState> = {}
     failedCheckCount: 0,
     pendingCheckCount: 0,
   }
+  const devServer = { url: "http://localhost:5173", port: 5173, processName: "vite", directory: "/work/app/web" }
   return {
     session: { pid: 1, sessionId: "c265e554", cwd: "/work/app", startedAt: NOW - 3_600_000, status: "busy", statusUpdatedAt: NOW - 120_000 },
     summary,
     git: { branch: "feature/overview", upstream: "origin/feature/overview", aheadCount: 1, behindCount: 0, changedFileCount: 2 },
     pullRequestLookup: "done",
-    links: buildLinkRows(summary, [pullRequest], "https://github.com/acme/app"),
+    links: buildLinkRows(summary, [pullRequest], "https://github.com/acme/app", [devServer], "/work/app"),
     selectedLinkIndex: 0,
     contextWindowTokens: 200_000,
     statusMessage: "updated 10:00",
@@ -85,7 +87,9 @@ test("the screen shows the branch, the pull request, the context and the artifac
     "90k of 200k tokens · 110k left",
     "Artifact 1",
     "https://claude.ai/artifact/1",
-    "src/main.ts",
+    "localhost:5173",
+    "vite · web",
+    "http://localhost:5173 ",
     "● working for 2m",
   ]) {
     expect(screen).toContain(expected)
@@ -186,4 +190,50 @@ test("numbers and durations are short", () => {
   expect(formatDuration(42_000)).toBe("42s")
   expect(formatDuration(3_900_000)).toBe("1h 5m")
   expect(scrollOffsetFor(50, 60, 10)).toBe(45)
+})
+
+test("listening sockets, working directories and program names are read from lsof and ps", () => {
+  const socketsOutput = ["p24270", "f9", "n127.0.0.1:3002", "p46339", "f10", "n*:3000", "f11", "n[::1]:3000", ""].join("\n")
+  expect(parseListeningSockets(socketsOutput)).toEqual([
+    { processId: 24270, host: "127.0.0.1", port: 3002 },
+    { processId: 46339, host: "*", port: 3000 },
+    { processId: 46339, host: "[::1]", port: 3000 },
+  ])
+  const directoriesOutput = ["p24270", "fcwd", "n/work/app", "p46339", "fcwd", "n/work/other", ""].join("\n")
+  expect([...parseWorkingDirectories(directoriesOutput)]).toEqual([[24270, "/work/app"], [46339, "/work/other"]])
+  expect(processNameOf("puma 8.0.2 (tcp://127.0.0.1:3002) [app]")).toBe("puma")
+  expect(processNameOf("node /work/app/node_modules/.bin/vite --host")).toBe("vite")
+  expect(processNameOf("/usr/local/bin/node --inspect server.js")).toBe("node")
+})
+
+test("a pitchfork proxy gives a route for each slug, with the port of its daemon", () => {
+  const configToml = `
+[settings.proxy]
+port = 18088
+
+[slugs.app-af1c]
+namespace = "app-586c"
+daemon = "rails"
+
+[slugs.docs]
+dir = "/work/docs"
+
+[namespaces.app-586c]
+dir = "/work/app"
+`
+  const stateToml = `
+[daemons."app-586c/css"]
+id = "app-586c/css"
+dir = "/work/app"
+
+[daemons."app-586c/rails"]
+id = "app-586c/rails"
+dir = "/work/app"
+active_port = 3001
+`
+  expect(parseProxyRoutes(configToml, stateToml)).toEqual([
+    { slug: "app-af1c", directory: "/work/app", daemonPort: 3001 },
+    { slug: "docs", directory: "/work/docs", daemonPort: undefined },
+  ])
+  expect(parseProxyRoutes("not [toml", "")).toEqual([])
 })

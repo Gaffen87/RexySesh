@@ -2,6 +2,7 @@
 // It reads no state of its own.
 import { homedir } from "node:os"
 import type { SessionRecord } from "./claudeSession.ts"
+import type { DevServer } from "./devServers.ts"
 import type { GitState, PullRequest } from "./git.ts"
 import type { TranscriptSummary } from "./transcript.ts"
 import {
@@ -17,7 +18,7 @@ import {
 } from "./text.ts"
 
 export type LinkRow = {
-  kind: "repository" | "pullRequest" | "artifact"
+  kind: "repository" | "pullRequest" | "devServer" | "artifact"
   url: string
   title: string
   detail: string
@@ -116,11 +117,13 @@ function pullRequestDetail(pullRequest: PullRequest): string {
 }
 
 // The repository comes first, then the pull requests of the branch (its whole stack, from the
-// trunk upward), then any others the session opened, then the artifacts.
+// trunk upward), then any others the session opened, then the dev servers, then the artifacts.
 export function buildLinkRows(
   summary: TranscriptSummary,
   branchPullRequests: PullRequest[],
   repositoryUrl?: string,
+  devServers: DevServer[] = [],
+  workingDirectory?: string,
 ): LinkRow[] {
   const rows: LinkRow[] = []
   if (repositoryUrl) {
@@ -150,6 +153,17 @@ export function buildLinkRows(
       title: `${link.repository ?? "Pull request "}#${link.number}`,
       detail: "opened in this session",
       markerColor: style.dim,
+    })
+  }
+  for (const devServer of devServers) {
+    const isInSubdirectory = !!workingDirectory && devServer.directory.startsWith(`${workingDirectory}/`)
+    const subdirectory = isInSubdirectory ? devServer.directory.slice(workingDirectory.length + 1) : ""
+    rows.push({
+      kind: "devServer",
+      url: devServer.url,
+      title: new URL(devServer.url).host,
+      detail: [devServer.processName, subdirectory].filter(Boolean).join(" · "),
+      markerColor: style.green,
     })
   }
   for (const artifact of summary.artifacts) {
@@ -257,10 +271,10 @@ function contextPanel(state: OverviewState, width: number): Panel {
 
 function gitPanel(state: OverviewState, width: number): Panel {
   const { git, links, selectedLinkIndex } = state
-  const repositoryRows = links.filter((row) => row.kind !== "artifact")
+  const repositoryRows = links.filter((row) => row.kind === "repository" || row.kind === "pullRequest")
   const hasPullRequest = repositoryRows.some((row) => row.kind === "pullRequest")
   const selectedLink = links[selectedLinkIndex]
-  const isFocused = !!selectedLink && selectedLink.kind !== "artifact"
+  const isFocused = !!selectedLink && repositoryRows.includes(selectedLink)
   const lines: string[] = []
   if (git === undefined) lines.push(dimLine("Asking git…", width))
   else if (git === null) lines.push(dimLine("Not a git repository", width))
@@ -292,40 +306,27 @@ function gitPanel(state: OverviewState, width: number): Panel {
   return { title: "Git", isFocused, isFlexible: false, yieldRank: 3, smallestHeight: 4, anchorLineIndex, contentLines: lines }
 }
 
-function artifactsPanel(state: OverviewState, width: number): Panel {
+function linkListPanel(
+  state: OverviewState,
+  kind: LinkRow["kind"],
+  title: string,
+  emptyMessage: string,
+  yieldRank: number,
+  width: number,
+): Panel {
   const { links, selectedLinkIndex } = state
-  const artifactRows = links.filter((row) => row.kind === "artifact")
-  const selectedPosition = artifactRows.indexOf(links[selectedLinkIndex]!)
-  const lines = artifactRows.flatMap((row, rowIndex) => linkLines(row, rowIndex === selectedPosition, width))
-  if (artifactRows.length === 0) lines.push(dimLine("No artifacts published in this session", width))
+  const rows = links.filter((row) => row.kind === kind)
+  const selectedPosition = rows.indexOf(links[selectedLinkIndex]!)
+  const lines = rows.flatMap((row, rowIndex) => linkLines(row, rowIndex === selectedPosition, width))
+  if (rows.length === 0) lines.push(dimLine(emptyMessage, width))
   return {
-    title: "Artifacts",
-    footer: selectedPosition >= 0 ? `${selectedPosition + 1} of ${artifactRows.length}` : "",
+    title,
+    footer: selectedPosition >= 0 ? `${selectedPosition + 1} of ${rows.length}` : "",
     isFocused: selectedPosition >= 0,
     isFlexible: true,
-    yieldRank: 2,
-    smallestHeight: 4,
+    yieldRank,
+    smallestHeight: rows.length > 0 ? 4 : 0,
     anchorLineIndex: selectedPosition >= 0 ? selectedPosition * 2 : undefined,
-    contentLines: lines,
-  }
-}
-
-function filesPanel(state: OverviewState, width: number): Panel {
-  const { touchedFiles, workingDirectory } = state.summary
-  const directoryPrefix = `${workingDirectory ?? state.session?.cwd ?? ""}/`
-  const lines = touchedFiles.map(({ path, editCount }) => {
-    const shownPath = path.startsWith(directoryPrefix) ? path.slice(directoryPrefix.length) : shortenHome(path)
-    const editLabel = `×${editCount}`
-    return fitToWidth(shownPath, width - displayWidth(editLabel) - 1) + " " + style.dim(editLabel)
-  })
-  if (lines.length === 0) lines.push(dimLine("Claude has edited no files yet", width))
-  return {
-    title: "Files edited by Claude",
-    footer: touchedFiles.length > 0 ? countOf(touchedFiles.length, "file") : "",
-    isFocused: false,
-    isFlexible: true,
-    yieldRank: 0,
-    smallestHeight: 0,
     contentLines: lines,
   }
 }
@@ -447,8 +448,10 @@ export function renderScreen(state: OverviewState, width: number, height: number
     (innerWidth: number) => gitPanel(state, innerWidth),
   ]
   const listPanels = [
-    (innerWidth: number) => artifactsPanel(state, innerWidth),
-    (innerWidth: number) => filesPanel(state, innerWidth),
+    (innerWidth: number) =>
+      linkListPanel(state, "devServer", "Dev servers", "No dev server runs in this directory", 0, innerWidth),
+    (innerWidth: number) =>
+      linkListPanel(state, "artifact", "Artifacts", "No artifacts published in this session", 2, innerWidth),
   ]
   if (width < TWO_COLUMN_WIDTH) return [...column([...overviewPanels, ...listPanels], width, panelsHeight), hints]
 

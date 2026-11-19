@@ -61,19 +61,14 @@ test("artifacts come from the results of the Artifact tool, newest first, once p
   expect(summary.promptCount).toBe(0)
 })
 
-test("pull requests, title, prompts, files and compactions are collected", () => {
+test("pull requests, title, prompts and compactions are collected", () => {
   const prLink = { type: "pr-link", prNumber: 12, prUrl: "https://github.com/acme/app/pull/12", prRepository: "acme/app" }
-  const edit = (toolUseId: string, name: string, filePath: string) =>
-    assistantRecord(toolUseId, { input_tokens: 1 }, [{ type: "tool_use", id: toolUseId, name, input: { file_path: filePath } }])
   const summary = summaryOf([
     { type: "ai-title", aiTitle: "Session overview plugin" },
     { type: "last-prompt", lastPrompt: "make it so" },
     { type: "permission-mode", permissionMode: "auto" },
     { type: "user", cwd: "/work/app", message: { content: "make it so" } },
     { type: "user", isMeta: true, message: { content: "a skill's text" } },
-    edit("e1", "Write", "/work/app/a.ts"),
-    edit("e2", "Edit", "/work/app/b.ts"),
-    edit("e3", "Edit", "/work/app/a.ts"),
     prLink,
     prLink,
     { type: "system", subtype: "compact_boundary" },
@@ -84,10 +79,6 @@ test("pull requests, title, prompts, files and compactions are collected", () =>
   expect(summary.permissionMode).toBe("auto")
   expect(summary.promptCount).toBe(1)
   expect(summary.workingDirectory).toBe("/work/app")
-  expect(summary.touchedFiles).toEqual([
-    { path: "/work/app/a.ts", editCount: 2 },
-    { path: "/work/app/b.ts", editCount: 1 },
-  ])
   expect(summary.pullRequestLinks).toEqual([{ url: prLink.prUrl, number: 12, repository: "acme/app" }])
   expect(summary.compactionCount).toBe(1)
   expect(summary.workedMilliseconds).toBe(90_000)

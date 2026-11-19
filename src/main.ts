@@ -7,6 +7,7 @@ import {
   type SessionQuery,
   type SessionRecord,
 } from "./claudeSession.ts"
+import { readDevServers, type DevServer } from "./devServers.ts"
 import { readBranchPullRequests, readGitState, type GitState, type PullRequest } from "./git.ts"
 import { TranscriptReader } from "./transcript.ts"
 import { buildLinkRows, renderScreen, type LinkRow, type OverviewState } from "./view.ts"
@@ -51,6 +52,7 @@ let transcript: TranscriptFollower | null = null
 let summary = new TranscriptReader().summary()
 let git: GitState | null | undefined
 let branchPullRequests: PullRequest[] = []
+let devServers: DevServer[] = []
 let pullRequestLookup: OverviewState["pullRequestLookup"] = ghBinary ? "loading" : "unavailable"
 let links: LinkRow[] = []
 let selectedLinkUrl: string | undefined
@@ -78,7 +80,7 @@ function selectedLinkIndex(): number {
 }
 
 function render() {
-  links = buildLinkRows(summary, branchPullRequests, git?.repositoryUrl)
+  links = buildLinkRows(summary, branchPullRequests, git?.repositoryUrl, devServers, repositoryDirectory())
   const lines = renderScreen(
     {
       session,
@@ -111,6 +113,16 @@ async function refreshGit() {
   const branchChanged = gitState?.branch !== git?.branch
   git = gitState
   if (branchChanged) void refreshPullRequest()
+  render()
+}
+
+async function refreshDevServers() {
+  const directory = repositoryDirectory()
+  if (!directory) return
+  const generation = repositoryGeneration
+  const foundDevServers = await readDevServers(directory)
+  if (generation !== repositoryGeneration) return
+  devServers = foundDevServers
   render()
 }
 
@@ -152,8 +164,10 @@ function tick() {
   followSession()
   if (session) {
     const now = Date.now()
-    if (now - gitReadAt >= GIT_POLL_MILLISECONDS) void refreshGit()
-    else if (now - pullRequestReadAt >= PULL_REQUEST_POLL_MILLISECONDS) void refreshPullRequest()
+    if (now - gitReadAt >= GIT_POLL_MILLISECONDS) {
+      void refreshGit()
+      void refreshDevServers()
+    } else if (now - pullRequestReadAt >= PULL_REQUEST_POLL_MILLISECONDS) void refreshPullRequest()
   }
   render()
 }
@@ -167,8 +181,12 @@ function refresh() {
 
 function moveSelection(step: number) {
   if (links.length === 0) return
-  const targetIndex = Math.min(links.length - 1, Math.max(0, selectedLinkIndex() + step))
+  const targetIndex = (selectedLinkIndex() + step + links.length) % links.length
   selectedLinkUrl = links[targetIndex]?.url
+}
+
+function selectLinkAt(linkIndex: number) {
+  selectedLinkUrl = links.at(linkIndex)?.url
 }
 
 function runDetached(command: string[], input?: string): boolean {
@@ -228,9 +246,9 @@ function handleKey(key: string) {
     case "\x1bOA":
       return moveSelection(-1)
     case "g":
-      return moveSelection(-Number.MAX_SAFE_INTEGER)
+      return selectLinkAt(0)
     case "G":
-      return moveSelection(Number.MAX_SAFE_INTEGER)
+      return selectLinkAt(-1)
     case "\r":
     case "o":
       return openSelectedLink()

@@ -142,7 +142,7 @@ return function(settings)
     title = "Toggle Claude session overview",
     description = "Open an overview of the focused pane's Claude Code session, or close it",
     category = "RexySesh",
-    keywords = "claude session overview context branch pull request pr artifacts info",
+    keywords = "claude session overview context branch pull request pr dev server artifacts info",
     args = { placement = "string?" },
     run = function(ctx, args)
       local placement = args.placement or default_placement

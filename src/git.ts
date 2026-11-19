@@ -1,4 +1,5 @@
 // Reads a working directory's branch from git, and its pull request from the GitHub CLI.
+import { outputOf } from "./command.ts"
 
 export type GitState = {
   branch: string
@@ -34,27 +35,9 @@ export type StackedBranch = {
   state: string
 }
 
-const COMMAND_TIMEOUT_MILLISECONDS = 15_000
 const PULL_REQUEST_FIELDS = "number,title,url,state,isDraft,reviewDecision,statusCheckRollup"
 const PASSED_CHECK_RESULTS = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"])
 const PENDING_CHECK_RESULTS = new Set(["", "PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING"])
-
-async function outputOf(command: string[], workingDirectory: string): Promise<string | null> {
-  try {
-    const child = Bun.spawn(command, {
-      cwd: workingDirectory,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "ignore",
-      timeout: COMMAND_TIMEOUT_MILLISECONDS,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GH_PROMPT_DISABLED: "1", NO_COLOR: "1" },
-    })
-    const [output, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited])
-    return exitCode === 0 ? output : null
-  } catch {
-    return null
-  }
-}
 
 export function parseGitStatus(statusOutput: string): GitState {
   const state: GitState = { branch: "", aheadCount: 0, behindCount: 0, changedFileCount: 0 }

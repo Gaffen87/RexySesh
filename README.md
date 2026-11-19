@@ -11,8 +11,8 @@ The overview only reads. It updates every second while it is open.
 - **Session**: the session's title, whether Claude is working or waiting for you, the model and effort, the permission mode, when the session started and how long Claude has worked, the number of prompts and tool calls, the tools used most, the directory, and your last prompt.
 - **Context**: how full the context window is, how many tokens are left, how many tokens Claude has written, and how often the session was compacted.
 - **Git**: the branch, how far it is ahead of or behind its upstream, the number of changed files, a link to the repository, and the branch's pull request with its state, checks and review. When the branch is part of a stack made with [gh stack](https://github.com/github/gh-stack), every pull request of the stack is listed from the trunk upward, with its place in the stack. `▶` and a bold title mark the pull request of the branch the session is on. Pull requests that Claude opened earlier in the session are listed too.
+- **Dev servers**: a link to every dev server that runs in the session's directory, with the name of its program.
 - **Artifacts**: every artifact the session published, with its title, version and link, newest first.
-- **Files edited by Claude**: the files Claude wrote or edited, most recent first, with the number of edits.
 
 ## Install
 
@@ -30,7 +30,7 @@ To remove everything: `./uninstall.sh`.
 
 | Key | Action |
 | --- | --- |
-| <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>k</kbd> <kbd>j</kbd> | Select the repository, a pull request or an artifact |
+| <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>k</kbd> <kbd>j</kbd> | Select the repository, a pull request, a dev server or an artifact. The selection wraps around at either end |
 | <kbd>g</kbd> <kbd>G</kbd> | Select the first or last link |
 | <kbd>Enter</kbd> or <kbd>o</kbd> | Open the selected link in your browser |
 | <kbd>y</kbd> | Copy the selected link |
@@ -65,7 +65,7 @@ rex do rexysesh_toggle placement=split
 - `bin/rexysesh` is a terminal app written in TypeScript and compiled with Bun. You can also run it on its own in a project's directory, outside Rex.
 - The toggle passes the process IDs of the focused pane to the overview. Claude Code keeps a file per running session in `~/.claude/sessions`, named after the session's process ID, so the overview finds the pane's session exactly. From a pane without Claude, it shows the newest running session of the pane's directory.
 - The session's facts come from its transcript in `~/.claude/projects`. The overview reads only what was appended since its last look.
-- The branch comes from `git status`, every 5 seconds. The pull requests come from `gh pr view` and `gh stack view`, every minute.
+- The branch comes from `git status`, every 5 seconds. The dev servers come from `lsof`, also every 5 seconds: they are the processes that run in the session's directory or below it, listen on a TCP port, and answer HTTP there. A server behind a [pitchfork](https://pitchfork.jdx.dev) proxy is linked by the proxy's address, `<slug>.localhost` on the proxy's port. The pull requests come from `gh pr view` and `gh stack view`, every minute.
 - `rexysesh.lua` holds your settings. The installer never overwrites it.
 - `rexysesh_toggle.lua` holds the action. The installer rewrites it on every run, with the paths of the overview, `git` and `gh` at the top.
 
