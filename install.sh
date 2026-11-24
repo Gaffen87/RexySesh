@@ -22,6 +22,7 @@ fi
 
 git_bin=${GIT_BIN:-$(command -v git || echo git)}
 gh_bin=${GH_BIN:-$(command -v gh || true)}
+rex_bin=${REX_BIN:-$(command -v rex || true)}
 
 lua_quoted() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
@@ -34,6 +35,7 @@ mkdir -p "$config_dir"
   echo "local REXYSESH_BIN = \"$(lua_quoted "$rexysesh_bin")\""
   echo "local GIT_BIN = \"$(lua_quoted "$git_bin")\""
   echo "local GH_BIN = \"$(lua_quoted "$gh_bin")\""
+  echo "local REX_BIN = \"$(lua_quoted "$rex_bin")\""
   echo
   cat "$plugin_dir/lua/rexysesh_toggle.lua"
 } > "$toggle_file"
@@ -62,4 +64,8 @@ fi
 if [ -z "$gh_bin" ]; then
   echo "gh is not on PATH, so pull requests are not looked up. Install it (brew install gh) and run this again."
 fi
+if [ -z "$rex_bin" ]; then
+  echo "rex is not on PATH, so the status comes from Claude's session file, not from Rex. Run this again from a Rex terminal."
+fi
 echo "press cmd+i, or run \"Toggle Claude session overview\" from the command palette"
+echo "to pick one of the session's links, run \"Open a Claude session link…\" from the command palette"

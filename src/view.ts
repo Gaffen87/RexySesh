@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import type { SessionRecord } from "./claudeSession.ts"
 import type { DevServer } from "./devServers.ts"
 import type { GitState, PullRequest } from "./git.ts"
+import type { BlockedKind, ProgramStatus } from "./rexStatus.ts"
 import type { TranscriptSummary } from "./transcript.ts"
 import {
   displayWidth,
@@ -30,6 +31,8 @@ export type LinkRow = {
 
 export type OverviewState = {
   session: SessionRecord | null
+  // What Claude reports to Rex about itself. Null outside Rex, or when it reported nothing.
+  programStatus: ProgramStatus | null
   summary: TranscriptSummary
   // Undefined while git is still being asked; null outside a repository.
   git: GitState | null | undefined
@@ -68,6 +71,7 @@ const TWO_COLUMN_WIDTH = 110
 const SMALLEST_FRAME_HEIGHT = 3
 const COMFORTABLE_LIST_HEIGHT = 6
 const SHOWN_TOOL_COUNT = 4
+const SHOWN_TASK_COUNT = 3
 const LARGEST_DETAIL_SHARE = 0.45
 const LINK_MARKER = "◆"
 const CURRENT_BRANCH_MARKER = "▶"
@@ -205,7 +209,39 @@ function linkLines(row: LinkRow, isSelected: boolean, width: number): string[] {
   ]
 }
 
-function statusLabel(session: SessionRecord, now: number): { text: string; color: Colorize } {
+const BLOCKED_KIND_LABELS: Record<BlockedKind, string> = {
+  permission: "permission",
+  question: "an answer",
+  auth: "sign-in",
+}
+
+// The status Claude reports to Rex is the more exact one: it tells what Claude waits for.
+// Without it, the session's own file tells only whether Claude is busy.
+function statusLabel(
+  session: SessionRecord,
+  programStatus: ProgramStatus | null,
+  now: number,
+): { text: string; color: Colorize } {
+  if (programStatus) {
+    // Rex knows a state's start only once it saw the state change. Until then the session
+    // file's own time counts, when it tells of the same state.
+    const fileState = session.status === "busy" ? "working" : session.status === "idle" ? "idle" : undefined
+    const reportedState = programStatus.state === "done" ? "idle" : programStatus.state
+    const stateSince = programStatus.stateSince ?? (fileState === reportedState ? session.statusUpdatedAt : undefined)
+    const since = stateSince ? ` for ${formatDuration(now - stateSince)}` : ""
+    switch (programStatus.state) {
+      case "working":
+        return { text: `● working${since}`, color: style.yellow }
+      case "blocked": {
+        const needed = programStatus.blockedKind ? `: ${BLOCKED_KIND_LABELS[programStatus.blockedKind]}` : ""
+        return { text: `◆ needs you${needed}${since}`, color: style.red }
+      }
+      case "error":
+        return { text: `✗ error${since}`, color: style.red }
+      default:
+        return { text: `○ waiting for you${since}`, color: style.green }
+    }
+  }
   const since = session.statusUpdatedAt ? ` for ${formatDuration(now - session.statusUpdatedAt)}` : ""
   if (session.status === "busy") return { text: `● working${since}`, color: style.yellow }
   if (session.status === "idle") return { text: `○ waiting for you${since}`, color: style.green }
@@ -215,9 +251,14 @@ function statusLabel(session: SessionRecord, now: number): { text: string; color
 function sessionPanel(state: OverviewState, session: SessionRecord, width: number): Panel {
   const { summary, now } = state
   const title = singleLine(summary.title ?? session.name ?? "Claude session")
-  const status = statusLabel(session, now)
+  const { programStatus } = state
+  const status = statusLabel(session, programStatus, now)
   const lines = [style.bold(fitToWidth(title, width)), " ".repeat(width)]
   lines.push(field("Status", status.text, width, status.color))
+  if (programStatus?.message) lines.push(field("Doing", singleLine(programStatus.message), width))
+  programStatus?.taskTitles.slice(0, SHOWN_TASK_COUNT).forEach((taskTitle, taskIndex) => {
+    lines.push(field(taskIndex === 0 ? "Tasks" : "", singleLine(taskTitle), width))
+  })
   if (summary.model) {
     lines.push(field("Model", summary.effort ? `${summary.model} · ${summary.effort} effort` : summary.model, width))
   }

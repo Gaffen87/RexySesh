@@ -22,3 +22,28 @@ export async function outputOf(
     return null
   }
 }
+
+// Returns whether the command ran and succeeded.
+export async function runQuietly(command: string[], input?: string): Promise<boolean> {
+  try {
+    const child = Bun.spawn(command, {
+      stdin: input === undefined ? "ignore" : "pipe",
+      stdout: "ignore",
+      stderr: "ignore",
+      timeout: COMMAND_TIMEOUT_MILLISECONDS,
+    })
+    if (input !== undefined && child.stdin) {
+      child.stdin.write(input)
+      child.stdin.end()
+    }
+    return (await child.exited) === 0
+  } catch {
+    return false
+  }
+}
+
+export const BROWSER_COMMAND = process.platform === "darwin" ? "open" : "xdg-open"
+
+export function openInBrowser(url: string): Promise<boolean> {
+  return runQuietly([BROWSER_COMMAND, url])
+}

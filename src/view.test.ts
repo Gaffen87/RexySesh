@@ -40,6 +40,7 @@ function stateWith(artifactCount: number, overrides: Partial<OverviewState> = {}
   const devServer = { url: "http://localhost:5173", port: 5173, processName: "vite", directory: "/work/app/web" }
   return {
     session: { pid: 1, sessionId: "c265e554", cwd: "/work/app", startedAt: NOW - 3_600_000, status: "busy", statusUpdatedAt: NOW - 120_000 },
+    programStatus: null,
     summary,
     git: { branch: "feature/overview", upstream: "origin/feature/overview", aheadCount: 1, behindCount: 0, changedFileCount: 2 },
     pullRequestLookup: "done",
@@ -94,6 +95,24 @@ test("the screen shows the branch, the pull request, the context and the artifac
   ]) {
     expect(screen).toContain(expected)
   }
+})
+
+test("the status Claude reports to Rex is shown before the session file's", () => {
+  const screenWith = (programStatus: OverviewState["programStatus"]) =>
+    renderScreen(stateWith(0, { programStatus }), 120, 40).join("\n")
+  const since = { stateSince: NOW - 30_000, taskTitles: [] }
+
+  const working = screenWith({ state: "working", message: "Running the tests", stateSince: NOW - 30_000, taskTitles: ["Explore the code"] })
+  for (const expected of ["● working for 30s", "Running the tests", "Explore the code"]) expect(working).toContain(expected)
+  expect(working).not.toContain("working for 2m")
+
+  expect(screenWith({ state: "blocked", blockedKind: "permission", ...since })).toContain("◆ needs you: permission for 30s")
+  expect(screenWith({ state: "blocked", ...since })).toContain("◆ needs you for 30s")
+  expect(screenWith({ state: "done", ...since })).toContain("○ waiting for you for 30s")
+  expect(screenWith({ state: "error", taskTitles: [] })).toContain("✗ error ")
+  expect(screenWith({ state: "working", taskTitles: [] })).toContain("● working for 2m")
+  expect(screenWith({ state: "blocked", taskTitles: [] })).toContain("◆ needs you ")
+  expect(screenWith(null)).toContain("● working for 2m")
 })
 
 test("a pull request the session opened is listed once, after the branch's own", () => {

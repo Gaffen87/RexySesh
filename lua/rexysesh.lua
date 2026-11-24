@@ -2,6 +2,7 @@
 -- To change a setting, edit it, then run "rex config reload".
 local settings = {
   -- key = "cmd+i", -- the key of the toggle, or false for none
+  -- links_key = "shift+cmd+i", -- a key that lists the session's links in the command palette
   -- placement = "overlay", -- overlay, split, zoomed, or tab
   -- direction = "right", -- of split and zoomed: right or down
   -- ratio = 0.5, -- the share of the split that RexySesh gets
