@@ -52,6 +52,10 @@ function allSessionRecords(): SessionRecord[] {
     .filter((record) => record !== null)
 }
 
+export function sessionProcessIds(): number[] {
+  return allSessionRecords().map((record) => record.pid)
+}
+
 // Claude Code names each running session's file after its process ID. A pane's process tree
 // therefore names its session exactly; the working directory is only a fallback.
 export function findSessionRecord(query: SessionQuery): SessionRecord | null {

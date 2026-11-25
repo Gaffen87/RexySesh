@@ -3,7 +3,7 @@
 import packageInfo from "../package.json"
 import type { SessionQuery } from "./claudeSession.ts"
 import { BROWSER_COMMAND, openInBrowser } from "./command.ts"
-import { readSessionLinks } from "./links.ts"
+import { readSessionLinks, renewCachedPullRequests } from "./links.ts"
 import { startOverview } from "./overview.ts"
 
 const commandArguments = process.argv.slice(2)
@@ -36,6 +36,9 @@ if (commandArguments.includes("--version")) {
   const url = optionValue("--open")
   if (!url || !/^https?:\/\//.test(url)) fail("--open needs an http or https address")
   if (!(await openInBrowser(url))) fail(`could not run ${BROWSER_COMMAND}`)
+} else if (commandArguments.includes("--renew-pull-requests")) {
+  await renewCachedPullRequests(sessionQuery, gitBinary, ghBinary)
+  process.exit(0)
 } else if (commandArguments.includes("--links")) {
   const sessionLinks = await readSessionLinks(sessionQuery, gitBinary, ghBinary)
   if (!sessionLinks) fail("no Claude Code session runs in this pane")

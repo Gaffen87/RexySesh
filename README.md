@@ -79,7 +79,7 @@ rex do rexysesh_links url=https://github.com/Gaffen87/RexySesh
 - The branch comes from `git status`, every 5 seconds. The dev servers come from `lsof`, also every 5 seconds: they are the processes that run in the session's directory or below it, listen on a TCP port, and answer HTTP there. A server behind a [pitchfork](https://pitchfork.jdx.dev) proxy is linked by the proxy's address, `<slug>.localhost` on the proxy's port. The pull requests come from `gh pr view` and `gh stack view`, every minute.
 - `rexysesh.lua` holds your settings. The installer never overwrites it.
 - `rexysesh_toggle.lua` holds the action. The installer rewrites it on every run, with the paths of the overview, `git`, `gh` and `rex` at the top.
-- The link picker runs `bin/rexysesh --links`, which prints the session's links as JSON without a terminal, shows them with Rex's `rex.ui.pick`, and opens the chosen one with `bin/rexysesh --open`.
+- The link picker runs `bin/rexysesh --links`, which prints the session's links as JSON without a terminal, shows them with Rex's `rex.ui.pick`, and opens the chosen one with `bin/rexysesh --open`. Asking GitHub takes most of a second, so the picker lists the pull requests kept from the last lookup in `~/.cache/rexysesh`, and asks GitHub again in the background for the next time. Only the first lookup of a branch waits for GitHub.
 
 ## Develop
 

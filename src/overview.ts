@@ -2,6 +2,7 @@
 import {
   findSessionRecord,
   findTranscriptPath,
+  sessionProcessIds,
   TranscriptFollower,
   type SessionQuery,
   type SessionRecord,
@@ -9,6 +10,7 @@ import {
 import { BROWSER_COMMAND, openInBrowser, runQuietly } from "./command.ts"
 import { readDevServers, type DevServer } from "./devServers.ts"
 import { readBranchPullRequests, readGitState, type GitState, type PullRequest } from "./git.ts"
+import { writeCachedPullRequests } from "./pullRequestCache.ts"
 import { followPaneStatus, type PaneStatusFollower } from "./rexStatus.ts"
 import { TranscriptReader } from "./transcript.ts"
 import { buildLinkRows, renderScreen, type LinkRow, type OverviewState } from "./view.ts"
@@ -115,7 +117,7 @@ async function refreshDevServers() {
   const directory = repositoryDirectory()
   if (!directory) return
   const generation = repositoryGeneration
-  const foundDevServers = await readDevServers(directory)
+  const foundDevServers = await readDevServers(directory, sessionProcessIds())
   if (generation !== repositoryGeneration) return
   devServers = foundDevServers
   render()
@@ -130,6 +132,7 @@ async function refreshPullRequest() {
   if (generation !== repositoryGeneration) return
   branchPullRequests = foundPullRequests
   pullRequestLookup = "done"
+  if (git) writeCachedPullRequests(directory, git.branch, foundPullRequests)
   render()
 }
 

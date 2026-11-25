@@ -138,9 +138,20 @@ local function link_items(session_links)
   return items
 end
 
+-- The links come with the pull requests kept from the last lookup, so the list shows at once.
+-- GitHub is asked again in the background, for the next time.
 -- Called straight from the action's run function: a prompt cannot pause inside pcall.
 local function pick_session_link(focused_block_id)
+  if type(rex.ui) ~= "table" or not rex.ui.pick then
+    error("this Rex server is too old to ask in the command palette; update Rex, "
+      .. "or pass an address: rex do rexysesh_links url=https://…", 0)
+  end
   local command = session_command(focused_block_id)
+  if GH_BIN ~= "" then
+    local renewal = session_command(focused_block_id)
+    table.insert(renewal, "--renew-pull-requests")
+    rex.exec.start(renewal, { detach = true, stdout = false, stderr = false })
+  end
   table.insert(command, "--links")
   local session_links = rex.json.decode(run_overview(command, 20))
   if type(session_links) ~= "table" or #session_links == 0 then

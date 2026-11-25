@@ -145,9 +145,13 @@ async function proxiedCandidates(
 
 // The servers come in the order of their ports, one per port. A server behind a proxy is
 // listed by the proxy's address only.
-export async function readDevServers(directory: string): Promise<DevServer[]> {
+// Claude Code itself listens on a local port and answers HTTP there, so the processes of
+// Claude's sessions are left out.
+export async function readDevServers(directory: string, claudeProcessIds: number[] = []): Promise<DevServer[]> {
   const socketsOutput = await firstOutputOf(LSOF_BINARIES, ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"])
-  const sockets = parseListeningSockets(socketsOutput ?? "")
+  const sockets = parseListeningSockets(socketsOutput ?? "").filter(
+    (socket) => !claudeProcessIds.includes(socket.processId),
+  )
   if (sockets.length === 0) return []
   const listeningProcessIds = [...new Set(sockets.map((socket) => socket.processId))]
   const [directoriesOutput, namesByProcessId] = await Promise.all([
